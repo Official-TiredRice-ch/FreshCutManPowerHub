@@ -15,9 +15,10 @@ import { isoUint8Array } from "npm:@simplewebauthn/server/helpers";
 serve(async (req) => {
   try {
     const supabase = createClient(
-      Deno.env.get("https://hunsymrayonkonkyzvot.supabase.co")!,
-      Deno.env.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1bnN5bXJheW9ua29ua3l6dm90Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NzE0MzUzOSwiZXhwIjoyMDcyNzE5NTM5fQ.tJch6Rne2P5IIlWwP6HaEuYJfuM6-9PLP65fkE6Lbmo")! 
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
 
     const body = await req.json();
     const { employeeId, credentialId, authenticatorData, clientDataJSON, signature, challenge } = body;
@@ -37,8 +38,8 @@ serve(async (req) => {
     // 2) Build WebAuthn expected parameters
     const expected = {
       challenge,
-      origin: "https://your-domain.com", // IMPORTANT: put your real domain
-      rpID: "your-domain.com",
+      origin: "https://freshcutmanpowerhub.onrender.com", 
+      rpID: "freshcutmanpowerhub.onrender.com",
     };
 
     // 3) Verify using @simplewebauthn/server

@@ -128,135 +128,137 @@ export default function AttendanceManagement() {
     return "Present";
   };
 
-  async function registerBiometric(employeeId) {
-  // 1) Fetch challenge from Supabase Edge Function
-  const res = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-challenge", {
-    method: "POST"
-  });
+    async function registerBiometric(employeeId) {
+    // 1) Fetch challenge from Supabase Edge Function
+    const res = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-challenge", {
+      method: "POST"
+    });
 
-  const { challenge } = await res.json();
+    const { challenge } = await res.json();
 
-  const challengeBytes = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
-  const userIdBytes = new TextEncoder().encode(employeeId);
+    const challengeBytes = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
+    const userIdBytes = new TextEncoder().encode(employeeId);
 
-  const publicKey = {
-    challenge: challengeBytes,
-    rp: { name: "Attendance System" },
-    user: {
-      id: userIdBytes,
-      name: `employee-${employeeId}`,
-      displayName: `Employee ${employeeId}`,
-    },
-    pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-    authenticatorSelection: {
-      authenticatorAttachment: "platform",
-      userVerification: "required",
-    },
-    attestation: "none", // Added: avoids Android errors
-  };
-
-  // 2) Create the biometric credential (Android fingerprint prompt appears)
-  const credential = await navigator.credentials.create({ publicKey });
-
-  // Convert rawId to Base64
-  const credentialId = btoa(
-    String.fromCharCode(...new Uint8Array(credential.rawId))
-  );
-
-  // Extract attestationObject for parsing later
-  const attestationObject = new Uint8Array(
-    credential.response.attestationObject
-  );
-
-  const attestationBase64 = btoa(
-    String.fromCharCode(...attestationObject)
-  );
-
-  // Extract clientDataJSON but not strictly required
-  const clientDataJSON = new Uint8Array(
-    credential.response.clientDataJSON
-  );
-
-  const clientDataBase64 = btoa(
-    String.fromCharCode(...clientDataJSON)
-  );
-
-  // 3) Store required data in Supabase
-  const { error } = await supabase.from("biometric_credentials").insert({
-    employee_id: employeeId,
-    credential_id: credentialId,
-    attestation_object: attestationBase64,
-    client_data_json: clientDataBase64,
-  });
-
-  if (error) {
-    console.error(error);
-    alert("Error: " + error.message);
-  } else {
-    alert("Biometric registered!");
-  }
-}
-
-
-async function verifyBiometric(employeeId) {
-  // 1) Request a challenge from Edge Function
-  const res = await fetch(
-    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-challenge",
-    { method: "POST", body: JSON.stringify({ employeeId }) }
-  );
-
-  const { challenge, credentialId } = await res.json();
-
-  const challengeBytes = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
-  const credentialIdBytes = Uint8Array.from(atob(credentialId), c => c.charCodeAt(0));
-
-  // 2) Request fingerprint authentication
-  const assertion = await navigator.credentials.get({
-    publicKey: {
+    const publicKey = {
       challenge: challengeBytes,
-      allowCredentials: [
-        {
-          id: credentialIdBytes,
-          type: "public-key",
-        },
-      ],
-      userVerification: "required",
+      rp: { name: "Attendance System" },
+      user: {
+        id: userIdBytes,
+        name: `employee-${employeeId}`,
+        displayName: `Employee ${employeeId}`,
+      },
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+      authenticatorSelection: {
+        authenticatorAttachment: "platform",
+        userVerification: "required",
+      },
+      attestation: "none", // Added: avoids Android errors
+    };
+
+    // 2) Create the biometric credential (Android fingerprint prompt appears)
+    const credential = await navigator.credentials.create({ publicKey });
+
+    // Convert rawId to Base64
+    const credentialId = btoa(
+      String.fromCharCode(...new Uint8Array(credential.rawId))
+    );
+
+    // Extract attestationObject for parsing later
+    const attestationObject = new Uint8Array(
+      credential.response.attestationObject
+    );
+
+    const attestationBase64 = btoa(
+      String.fromCharCode(...attestationObject)
+    );
+
+    // Extract clientDataJSON but not strictly required
+    const clientDataJSON = new Uint8Array(
+      credential.response.clientDataJSON
+    );
+
+    const clientDataBase64 = btoa(
+      String.fromCharCode(...clientDataJSON)
+    );
+
+    // 3) Store required data in Supabase
+    const { error } = await supabase.from("biometric_credentials").insert({
+      employee_id: employeeId,
+      credential_id: credentialId,
+      attestation_object: attestationBase64,
+      client_data_json: clientDataBase64,
+    });
+
+    if (error) {
+      console.error(error);
+      alert("Error: " + error.message);
+    } else {
+      alert("Biometric registered!");
     }
-  });
-
-  // 3) Prepare data to send back for verification
-  const authData = new Uint8Array(assertion.response.authenticatorData);
-  const clientDataJSON = new Uint8Array(assertion.response.clientDataJSON);
-  const signature = new Uint8Array(assertion.response.signature);
-  const rawId = new Uint8Array(assertion.rawId);
-
-  const payload = {
-    employee_id: employeeId,
-    credential_id: btoa(String.fromCharCode(...rawId)),
-    authenticator_data: btoa(String.fromCharCode(...authData)),
-    client_data_json: btoa(String.fromCharCode(...clientDataJSON)),
-    signature: btoa(String.fromCharCode(...signature)),
-  };
-
-  // 4) Send for server verification
-  const verifyRes = await fetch(
-    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-verify",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
-
-  const result = await verifyRes.json();
-
-  if (result.success) {
-    return true; // authentication passed!
   }
 
-  alert("Biometric verification failed");
-  return false;
-}
+
+  async function verifyBiometric(employeeId) {
+    // 1) Request a challenge from Edge Function
+    const res = await fetch(
+      "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-challenge",
+      { method: "POST", body: JSON.stringify({ employeeId }) }
+    );
+
+    const { challenge, credentialId } = await res.json();
+
+    const challengeBytes = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
+    const credentialIdBytes = Uint8Array.from(atob(credentialId), c => c.charCodeAt(0));
+
+    // 2) Request fingerprint authentication
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: challengeBytes,
+        allowCredentials: [
+          {
+            id: credentialIdBytes,
+            type: "public-key",
+          },
+        ],
+        userVerification: "required",
+      }
+    });
+
+    // 3) Prepare data to send back for verification
+    const authData = new Uint8Array(assertion.response.authenticatorData);
+    const clientDataJSON = new Uint8Array(assertion.response.clientDataJSON);
+    const signature = new Uint8Array(assertion.response.signature);
+    const rawId = new Uint8Array(assertion.rawId);
+
+    const payload = {
+      employeeId: employeeId,
+      credentialId: btoa(String.fromCharCode(...rawId)),
+      authenticatorData: btoa(String.fromCharCode(...authData)),
+      clientDataJSON: btoa(String.fromCharCode(...clientDataJSON)),
+      signature: btoa(String.fromCharCode(...signature)),
+      challenge: challenge,
+    };
+
+
+    // 4) Send for server verification
+    const verifyRes = await fetch(
+      "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-verify",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const result = await verifyRes.json();
+
+    if (result.success) {
+      return true; // authentication passed!
+    }
+
+    alert("Biometric verification failed");
+    return false;
+  }
 
 
 
