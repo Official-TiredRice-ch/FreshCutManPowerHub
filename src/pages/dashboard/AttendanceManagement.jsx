@@ -137,13 +137,17 @@ export default function AttendanceManagement() {
 
 
 async function registerBiometric(employeeId) {
+
   const res = await fetch(
-    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-challenge",
-    { method: "POST" }
+    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-options",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employeeId })
+    }
   );
 
   const { challenge } = await res.json();
-
   const challengeBytes = base64urlToUint8Array(challenge);
   const userIdBytes = new TextEncoder().encode(employeeId);
 
@@ -157,7 +161,7 @@ async function registerBiometric(employeeId) {
     },
     pubKeyCredParams: [{ type: "public-key", alg: -7 }],
     authenticatorSelection: {
-      authenticatorAttachment: "platform", // Android built-in fingerprint
+      authenticatorAttachment: "platform",
       userVerification: "required",
     },
     attestation: "none",
@@ -168,30 +172,37 @@ async function registerBiometric(employeeId) {
   const credentialId = btoa(
     String.fromCharCode(...new Uint8Array(credential.rawId))
   );
-
-  const attestationObject = credential.response.attestationObject;
   const attestationBase64 = btoa(
-    String.fromCharCode(...new Uint8Array(attestationObject))
+    String.fromCharCode(...new Uint8Array(credential.response.attestationObject))
   );
-
   const clientDataBase64 = btoa(
     String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON))
   );
 
-  const { error } = await supabase.from("webauthn_credentials").insert({
-    employee_id: employeeId, // FIXED
-    credential_id: credentialId,
-    attestation_object: attestationBase64,
-    client_data_json: clientDataBase64,
-  });
+  const verifyRes = await fetch(
+    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-verify",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId,
+        credentialId,
+        attestationObject: attestationBase64,
+        clientDataJSON: clientDataBase64
+      })
+    }
+  );
 
-  if (error) {
-    console.error(error);
+  const result = await verifyRes.json();
+  if (!result.success) {
     alert("Biometric registration failed.");
-  } else {
-    alert("Biometric registered!");
+    return false;
   }
+
+  alert("Biometric Registered!");
+  return true;
 }
+
 
 async function hasBiometric(employeeId) {
   const { data, error } = await supabase
@@ -220,8 +231,9 @@ async function ensureBiometricAuth(employeeId) {
 
 
 async function verifyBiometric(employeeId) {
+
   const res = await fetch(
-    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-challenge",
+    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-options",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -230,7 +242,6 @@ async function verifyBiometric(employeeId) {
   );
 
   const data = await res.json();
-
   const challengeBytes = base64urlToUint8Array(data.challenge);
 
   const assertion = await navigator.credentials.get({
@@ -256,11 +267,11 @@ async function verifyBiometric(employeeId) {
     signature: btoa(
       String.fromCharCode(...new Uint8Array(assertion.response.signature))
     ),
-    challenge: data.challenge, // REQUIRED
+    challenge: data.challenge
   };
 
   const verifyRes = await fetch(
-    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-verify",
+    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-verify",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -271,6 +282,7 @@ async function verifyBiometric(employeeId) {
   const result = await verifyRes.json();
   return result.success;
 }
+
 
 
   const handleTimeIn = async (employeeId, employeeName) => {
