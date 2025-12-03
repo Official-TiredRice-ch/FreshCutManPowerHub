@@ -3,11 +3,24 @@
 // This enables autocomplete, go to definition, etc.
 // Setup type definitions for built-in Supabase Runtime APIs
 // supabase/functions/webauthn-auth-challenge/index.ts
-import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-
 import { serve } from "https://deno.land/std/http/server.ts";
-import { generateAuthenticationOptions } from "npm:@simplewebauthn/server";
+import {
+  generateAuthenticationOptions,
+} from "npm:@simplewebauthn/server";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+function base64urlToUint8Array(base64url: string) {
+  const padding = "=".repeat((4 - (base64url.length % 4)) % 4);
+  const base64 = (base64url + padding)
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    arr[i] = raw.charCodeAt(i);
+  }
+  return arr;
+}
 
 serve(async (req) => {
   try {
@@ -16,54 +29,57 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { employeeId } = await req.json();
-
-    if (!employeeId) {
-      return new Response(JSON.stringify({ error: "Missing employeeId" }), {
+    const { userId } = await req.json();
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Missing userId" }), {
         status: 400,
       });
     }
 
+
     const { data: creds, error } = await supabase
-      .from("biometric_credentials")
+      .from("webauthn_credentials")
       .select("*")
-      .eq("employee_id", employeeId)
+      .eq("user_id", userId)
       .single();
 
     if (error || !creds) {
-      return new Response(JSON.stringify({ error: "No credentials found" }), {
-        status: 404,
-      });
+      return new Response(
+        JSON.stringify({ error: "No stored WebAuthn credentials" }),
+        { status: 404 }
+      );
     }
 
-    const credentialIdBytes = Uint8Array.from(
-      atob(creds.credential_id),
-      (c) => c.charCodeAt(0)
-    );
+    // Convert base64url credential ID → Uint8Array
+    const credentialID = base64urlToUint8Array(creds.credential_id);
 
     const options = await generateAuthenticationOptions({
       timeout: 60000,
+      rpID: "freshcutmanpowerhub.onrender.com", // 🔥 your real domain
       allowCredentials: [
         {
-          id: credentialIdBytes,
+          id: credentialID,
           type: "public-key",
         },
       ],
       userVerification: "preferred",
-      rpID: "freshcutmanpowerhub.onrender.com",
     });
 
+    // Store challenge
     await supabase
-      .from("biometric_credentials")
+      .from("webauthn_credentials")
       .update({ current_challenge: options.challenge })
-      .eq("employee_id", employeeId);
+      .eq("user_id", userId);
 
     return new Response(JSON.stringify(options), {
       headers: { "Content-Type": "application/json" },
       status: 200,
     });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err.message }),
+      { status: 500 }
+    );
   }
 });
 
