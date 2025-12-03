@@ -55,7 +55,7 @@ serve(async (req) => {
 
     const options = await generateAuthenticationOptions({
       timeout: 60000,
-      rpID: "freshcutmanpowerhub.onrender.com", // 🔥 your real domain
+      rpID: "freshcutmanpowerhub.onrender.com", 
       allowCredentials: [
         {
           id: credentialID,
@@ -71,10 +71,16 @@ serve(async (req) => {
       .update({ current_challenge: options.challenge })
       .eq("user_id", userId);
 
-    return new Response(JSON.stringify(options), {
-      headers: { "Content-Type": "application/json" },
-      status: 200,
-    });
+    return new Response(
+      JSON.stringify({
+        challenge: options.challenge,
+        credentialId: creds.credential_id, // stored key
+        allowCredentials: options.allowCredentials,
+        rpID: options.rpID,
+        userVerification: options.userVerification,
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    );
   } catch (err) {
     return new Response(
       JSON.stringify({ error: err.message }),

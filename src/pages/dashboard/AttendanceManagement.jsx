@@ -202,27 +202,26 @@ export default function AttendanceManagement() {
     // 1) Request a challenge from Edge Function
     const res = await fetch(
       "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-challenge",
-      { method: "POST", body: JSON.stringify({ employeeId }) }
+      { method: "POST", body: JSON.stringify({ userId: employeeId })
+ }
     );
 
-    const { challenge, credentialId } = await res.json();
+    const data = await res.json();
 
-    const challengeBytes = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
-    const credentialIdBytes = Uint8Array.from(atob(credentialId), c => c.charCodeAt(0));
+    const challengeBytes = Uint8Array.from(atob(data.challenge), c => c.charCodeAt(0));
+    const credentialIdBytes = Uint8Array.from(atob(data.credentialId), c => c.charCodeAt(0));
 
-    // 2) Request fingerprint authentication
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: challengeBytes,
-        allowCredentials: [
-          {
-            id: credentialIdBytes,
-            type: "public-key",
-          },
-        ],
-        userVerification: "required",
+        allowCredentials: data.allowCredentials.map(c => ({
+          id: Uint8Array.from(atob(c.id), x => x.charCodeAt(0)),
+          type: "public-key"
+        })),
+        userVerification: data.userVerification
       }
     });
+
 
     // 3) Prepare data to send back for verification
     const authData = new Uint8Array(assertion.response.authenticatorData);
