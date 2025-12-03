@@ -190,7 +190,7 @@ export default function AttendanceManagement() {
     );
 
     // 3) Store required data in Supabase
-    const { error } = await supabase.from("biometric_credentials").insert({
+    const { error } = await supabase.from("webauthn_credentials").insert({
       employee_id: employeeId,
       credential_id: credentialId,
       attestation_object: attestationBase64,
@@ -205,6 +205,38 @@ export default function AttendanceManagement() {
     }
   }
 
+  async function hasBiometric(employeeId) {
+  const { data, error } = await supabase
+    .from("webauthn_credentials")
+    .select("id")
+    .eq("user_id", employeeId)
+    .maybeSingle();
+
+  if (error) return false;
+  return !!data;
+}
+
+async function ensureBiometricAuth(employeeId) {
+  // 1. Does this user have a credential?
+  const exists = await hasBiometric(employeeId);
+
+  if (!exists) {
+    const ok = confirm("No biometric found. Register fingerprint now?");
+    if (!ok) return false;
+
+    await registerBiometric(employeeId);
+  }
+
+  // 2. Verify biometric
+  const verified = await verifyBiometric(employeeId);
+
+  if (!verified) {
+    alert("Biometric verification failed.");
+    return false;
+  }
+
+  return true;
+}
 
 
 async function verifyBiometric(employeeId) {
@@ -250,8 +282,6 @@ async function verifyBiometric(employeeId) {
 
   return result.success;
 }
-
-
 
 
   const handleTimeIn = async (employeeId, employeeName) => {
@@ -496,10 +526,11 @@ async function verifyBiometric(employeeId) {
                         {!attendance.checkIn ? (
                           <button
                             className="btn-time-in"
-                           onClick={async () => {
-                            const ok = await verifyBiometric(employee.id);
-                            if (!ok) return; 
-                            handleTimeIn(employee.id, employee.full_name);}}
+                             onClick={async () => {
+                             const ok = await ensureBiometricAuth(employee.id);
+                              if (!ok) return;
+                              handleTimeIn(employee.id, employee.full_name);
+                            }}      
                           >
                             <FiClock size={16} />
                             Time In
@@ -507,10 +538,11 @@ async function verifyBiometric(employeeId) {
                         ) : !attendance.checkOut ? (
                           <button
                             className="btn-time-out"
-                            onClick={async () => {
-                            const ok = await verifyBiometric(employee.id);
-                            if (!ok) return;
-                            handleTimeOut(employee.id, employee.full_name);}}
+                              onClick={async () => {
+                              const ok = await ensureBiometricAuth(employee.id);
+                              if (!ok) return;
+                              handleTimeOut(employee.id, employee.full_name);
+                            }}
                           >
                             <FiCheckCircle size={16} />
                             Time Out
