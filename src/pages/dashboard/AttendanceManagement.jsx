@@ -128,6 +128,14 @@ export default function AttendanceManagement() {
     return "Present";
   };
 
+  function base64urlToUint8Array(base64url) {
+  const padding = "=".repeat((4 - (base64url.length % 4)) % 4);
+  const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/") + padding;
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((x) => x.charCodeAt(0)));
+}
+
+
     async function registerBiometric(employeeId) {
     // 1) Fetch challenge from Supabase Edge Function
     const res = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-challenge", {
@@ -198,66 +206,51 @@ export default function AttendanceManagement() {
   }
 
 
-  async function verifyBiometric(employeeId) {
-    // 1) Request a challenge from Edge Function
-    const res = await fetch(
-      "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-challenge",
-      { method: "POST", body: JSON.stringify({ userId: employeeId })
- }
-    );
 
-    const data = await res.json();
+async function verifyBiometric(employeeId) {
+  const res = await fetch(
+    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-challenge",
+    { method: "POST", body: JSON.stringify({ userId: employeeId }) }
+  );
 
-    const challengeBytes = Uint8Array.from(atob(data.challenge), c => c.charCodeAt(0));
-    const credentialIdBytes = Uint8Array.from(atob(data.credentialId), c => c.charCodeAt(0));
+  const data = await res.json();
 
-    const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge: challengeBytes,
-        allowCredentials: data.allowCredentials.map(c => ({
-          id: Uint8Array.from(atob(c.id), x => x.charCodeAt(0)),
-          type: "public-key"
-        })),
-        userVerification: data.userVerification
-      }
-    });
+  const challengeBytes = base64urlToUint8Array(data.challenge);
 
-
-    // 3) Prepare data to send back for verification
-    const authData = new Uint8Array(assertion.response.authenticatorData);
-    const clientDataJSON = new Uint8Array(assertion.response.clientDataJSON);
-    const signature = new Uint8Array(assertion.response.signature);
-    const rawId = new Uint8Array(assertion.rawId);
-
-    const payload = {
-      employeeId: employeeId,
-      credentialId: btoa(String.fromCharCode(...rawId)),
-      authenticatorData: btoa(String.fromCharCode(...authData)),
-      clientDataJSON: btoa(String.fromCharCode(...clientDataJSON)),
-      signature: btoa(String.fromCharCode(...signature)),
-      challenge: challenge,
-    };
-
-
-    // 4) Send for server verification
-    const verifyRes = await fetch(
-      "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-verify",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    const result = await verifyRes.json();
-
-    if (result.success) {
-      return true; // authentication passed!
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge: challengeBytes,
+      allowCredentials: data.allowCredentials.map(c => ({
+        id: base64urlToUint8Array(c.id),
+        type: "public-key",
+      })),
+      userVerification: data.userVerification,
     }
+  });
 
-    alert("Biometric verification failed");
-    return false;
-  }
+  const payload = {
+    employeeId: employeeId,
+    credentialId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
+    authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData))),
+    clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON))),
+    signature: btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature))),
+    challenge: data.challenge, // FIXED
+  };
+
+  const verifyRes = await fetch(
+    "https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-verify",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const result = await verifyRes.json();
+
+  return result.success;
+}
+
 
 
 
