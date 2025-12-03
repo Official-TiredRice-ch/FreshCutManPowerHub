@@ -1,0 +1,181 @@
+.landing-root {
+  width: 100%;
+  color: #0f172a;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.landing-hero {
+  padding: 4rem 1.5rem;
+  color: #fff;
+}
+
+.landing-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.landing-grid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: center;
+}
+
+.landing-hero h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  margin-bottom: 1rem;
+}
+
+.landing-hero p {
+  opacity: 0.9;
+  font-size: 1.05rem;
+  margin-bottom: 2rem;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.landing-btn {
+  border: none;
+  border-radius: 0.9rem;
+  padding: 0.95rem 2.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.landing-btn.primary {
+  background: #fff;
+  color: #0ea5e9;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2);
+}
+
+.landing-btn.outline {
+  background: transparent;
+  border: 2px solid #fff;
+  color: #fff;
+}
+
+.landing-btn:hover {
+  transform: translateY(-3px);
+}
+
+.landing-illustration svg {
+  max-width: 100%;
+}
+
+.person {
+  animation: float 3s ease-in-out infinite;
+}
+
+.person-1 { animation-delay: 0s; }
+.person-2 { animation-delay: 0.2s; }
+.person-3 { animation-delay: 0.4s; }
+.person-4 { animation-delay: 0.6s; }
+.person-5 { animation-delay: 0.8s; }
+
+.connection {
+  animation: fadeInOut 2s ease-in-out infinite;
+}
+
+.hub-circle {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.landing-section {
+  padding: 4rem 1.5rem;
+}
+
+.landing-section h2 {
+  text-align: center;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  margin-bottom: 2rem;
+}
+
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+
+.service-card {
+  border-radius: 1.2rem;
+  padding: 2rem;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.service-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 25px 50px rgba(15, 23, 42, 0.15);
+}
+
+.service-card h3 {
+  margin: 1rem 0;
+  font-size: 1.3rem;
+}
+
+.service-icon {
+  font-size: 3rem;
+}
+
+.benefit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.benefit-list li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.trophy-card {
+  text-align: center;
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: 1.5rem;
+  padding: 3rem 1.5rem;
+  color: #fff;
+  box-shadow: 0 20px 40px rgba(2, 6, 23, 0.55);
+}
+
+.trophy {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.contact-card {
+  text-align: center;
+  border-radius: 1.5rem;
+  padding: 3rem 1.5rem;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+}
+
+.landing-footer {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-15px); }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.1); opacity: 0.5; }
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
