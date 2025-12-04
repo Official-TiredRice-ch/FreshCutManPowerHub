@@ -128,12 +128,35 @@ export default function AttendanceManagement() {
     return "Present";
   };
 
-// helper: base64url -> Uint8Array (keep yours)
+
+  /* ---------- helpers ---------- */
+// base64url encode a Uint8Array
+function uint8ArrayToBase64Url(bytes) {
+  const b64 = btoa(String.fromCharCode(...bytes));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+
+// base64url -> Uint8Array
 function base64urlToUint8Array(base64url) {
   const padding = "=".repeat((4 - (base64url.length % 4)) % 4);
   const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/") + padding;
   const raw = atob(base64);
   return Uint8Array.from([...raw].map((x) => x.charCodeAt(0)));
+}
+
+// safe convert server-provided user.id (could be array or base64url string)
+function normalizeServerUserId(userId) {
+  if (!userId) return null;
+  // if it's an array of numbers (Uint8Array serialized), convert:
+  if (Array.isArray(userId)) return new Uint8Array(userId);
+  // if it's a string (maybe already base64url), try to decode:
+  try {
+    return base64urlToUint8Array(userId);
+  } catch (e) {
+    // fallback: encode as UTF-8 bytes (TextEncoder)
+    return new TextEncoder().encode(String(userId));
+  }
 }
 
 async function uuidToBytes(uuid) {
@@ -153,10 +176,9 @@ async function getUserId() {
 
 /* -------- registerBiometric (frontend) -------- */
 async function registerBiometric(employeeId) {
-  // get supabase auth user id
   const user_id = await getUserId();
 
-  // 1) request registration options (challenge) from your edge function
+  // 1) fetch server options (use exactly what server returns)
   const res = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-options", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -170,57 +192,73 @@ async function registerBiometric(employeeId) {
     return false;
   }
 
-  const data = await res.json();
-  // data.challenge expected as base64url (or base64) — convert properly
-  const challengeBytes = base64urlToUint8Array(data.challenge);
+  const options = await res.json();
 
-const publicKey = {
-  challenge: challengeBytes,
-  rp: { name: "FreshCut Manpower Hub", id: "freshcutmanpowerhub.onrender.com" },
-  user: {
-    id: await uuidToBytes(user_id), 
-    name: `user-${user_id}`,
-    displayName: `Employee ${employeeId}`,
-  },
-  pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-  authenticatorSelection: { 
-    authenticatorAttachment: "platform",
-    userVerification: "required",  // <--- MUST
-  },
-  timeout: 60000,
-  attestation: "none",
-};
+  // convert challenge -> Uint8Array
+  const challengeBytes = base64urlToUint8Array(
+    // server may return challenge as base64url or base64; normalize
+    typeof options.challenge === "string" ? options.challenge.replace(/\s/g, "") : ""
+  );
 
+  // prefer using server-provided user.id if present
+  const userIdBytes = normalizeServerUserId(options.user?.id) || await (async () => {
+    // fallback: create deterministic 16-byte id from user id
+    const enc = new TextEncoder();
+    const hash = await crypto.subtle.digest("SHA-256", enc.encode(user_id));
+    return new Uint8Array(hash).slice(0, 16);
+  })();
 
-  // 2) navigator create (opens fingerprint prompt)
-  const credential = await navigator.credentials.create({ publicKey });
+  // Build publicKey using server-provided values where possible
+  const publicKey = {
+    challenge: challengeBytes,
+    rp: options.rp || { name: "FreshCut Manpower Hub", id: "freshcutmanpowerhub.onrender.com" },
+    user: {
+      id: userIdBytes,
+      name: options.user?.name || `user-${user_id}`,
+      displayName: options.user?.displayName || `Employee ${employeeId}`
+    },
+    pubKeyCredParams: options.pubKeyCredParams || [{ type: "public-key", alg: -7 }],
+    authenticatorSelection: options.authenticatorSelection || { authenticatorAttachment: "platform", userVerification: "required" },
+    timeout: options.timeout || 60000,
+    attestation: options.attestation || "none",
+  };
 
-  // 3) package credential to send to verify endpoint
-  const credentialIdB64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-  const attestationB64 = btoa(String.fromCharCode(...new Uint8Array(credential.response.attestationObject)));
-  const clientDataB64 = btoa(String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON)));
+  // 2) navigator.credentials.create()
+  let credential;
+  try {
+    credential = await navigator.credentials.create({ publicKey });
+  } catch (err) {
+    console.error("navigator.credentials.create error:", err);
+    alert("Biometric registration failed (platform error).");
+    return false;
+  }
 
-  // 4) send to register-verify edge function which will validate attestation (or at least store)
+  // 3) encode response fields as base64url (NOT normal base64)
+  const rawIdB64Url = uint8ArrayToBase64Url(new Uint8Array(credential.rawId));
+  const attestationB64Url = uint8ArrayToBase64Url(new Uint8Array(credential.response.attestationObject));
+  const clientDataB64Url = uint8ArrayToBase64Url(new Uint8Array(credential.response.clientDataJSON));
+
+  // 4) send to verify endpoint
   const verifyRes = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       user_id,
       id: credential.id,
-      rawId: credentialIdB64,
+      rawId: rawIdB64Url,            // base64url
       type: credential.type,
-      challenge: data.challenge,
+      challenge: options.challenge,  // send the challenge string the server gave
       response: {
-        attestationObject: attestationB64,
-        clientDataJSON: clientDataB64,
+        attestationObject: attestationB64Url,
+        clientDataJSON: clientDataB64Url,
       }
     })
   });
 
-  const verifyJson = await verifyRes.json();
+  const verifyJson = await verifyRes.json().catch(() => ({}));
   if (!verifyRes.ok || !verifyJson.success) {
     console.error("Register verify failed", verifyJson);
-    alert("Biometric registration failed");
+    alert("Biometric registration failed (verify).");
     return false;
   }
 
@@ -268,7 +306,7 @@ async function ensureBiometricAuth(employeeId) {
 async function verifyBiometric(employeeId) {
   const user_id = await getUserId();
 
-  // 1) request auth options (challenge + allowCredentials) using user_id
+  // 1) get auth options (challenge + allowCredentials) from server
   const res = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-options", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -280,34 +318,47 @@ async function verifyBiometric(employeeId) {
     return false;
   }
 
-  const data = await res.json();
-  const challengeBytes = base64urlToUint8Array(data.challenge);
+  const options = await res.json();
 
-  // 2) navigator get() — Android prompt
-  const assertion = await navigator.credentials.get({
-    publicKey: {
-      challenge: challengeBytes,
-      allowCredentials: (data.allowCredentials || []).map(c => ({
-        id: base64urlToUint8Array(c.id.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")),
-        type: "public-key",
-      })),
-      userVerification: "required",
-      timeout: 60000,
-    }
-  });
+  // convert challenge -> Uint8Array
+  const challengeBytes = base64urlToUint8Array(options.challenge);
 
-  // 3) prepare payload
-  const payload = {
-      user_id,
-      id: assertion.id,
-      rawId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
-      type: assertion.type,
-      challenge: data.challenge,
-      response: {
-        authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData))),
-        clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON))),
-        signature: btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature))),
+  // allowCredentials: normalize ids (server should send base64url)
+  const allowCredentials = (options.allowCredentials || []).map(c => ({
+    id: base64urlToUint8Array(c.id),
+    type: c.type || "public-key",
+  }));
+
+  // 2) navigator.credentials.get(); include rpId to force correct RP resolution
+  let assertion;
+  try {
+    assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: challengeBytes,
+        allowCredentials,
+        userVerification: options.userVerification || "required",
+        timeout: options.timeout || 60000,
+        rpId: (options.rpId || (options.rp && options.rp.id) || "freshcutmanpowerhub.onrender.com"),
       }
+    });
+  } catch (err) {
+    console.error("navigator.credentials.get error:", err);
+    return false;
+  }
+
+  // 3) prepare payload — encode fields to base64url
+  const payload = {
+    user_id,
+    id: assertion.id,
+    rawId: uint8ArrayToBase64Url(new Uint8Array(assertion.rawId)),
+    type: assertion.type,
+    challenge: options.challenge,
+    response: {
+      authenticatorData: uint8ArrayToBase64Url(new Uint8Array(assertion.response.authenticatorData)),
+      clientDataJSON: uint8ArrayToBase64Url(new Uint8Array(assertion.response.clientDataJSON)),
+      signature: uint8ArrayToBase64Url(new Uint8Array(assertion.response.signature)),
+      userHandle: assertion.response.userHandle ? uint8ArrayToBase64Url(new Uint8Array(assertion.response.userHandle)) : null,
+    }
   };
 
   // 4) verify at server
@@ -317,7 +368,7 @@ async function verifyBiometric(employeeId) {
     body: JSON.stringify(payload),
   });
 
-  const result = await verifyRes.json();
+  const result = await verifyRes.json().catch(() => ({}));
   return result.success === true;
 }
 
