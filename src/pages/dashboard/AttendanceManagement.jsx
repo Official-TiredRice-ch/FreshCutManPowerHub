@@ -178,15 +178,16 @@ async function getUserId() {
 async function registerBiometric(employeeId) {
   const user_id = await getUserId();
 
-  // 1) fetch server options
+  // 1) fetch server options (use exactly what server returns)
   const res = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-options", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ employee_id: employeeId })
+    body: JSON.stringify({ user_id })
   });
 
   if (!res.ok) {
-    console.error("Register options error", await res.text());
+    const err = await res.json().catch(() => ({}));
+    console.error("Register options error", err);
     alert("Failed to get registration options");
     return false;
   }
@@ -194,67 +195,74 @@ async function registerBiometric(employeeId) {
   const options = await res.json();
 
   // convert challenge -> Uint8Array
-  const challengeBytes = base64urlToUint8Array(options.challenge);
+ const challengeBytes = base64urlToUint8Array(options.challenge);
 
-  // derive user ID
-  const userIdBytes = normalizeServerUserId(options.user?.id) ||
-    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(user_id))).slice(0, 16);
 
-  // 2) call navigator.credentials.create()
+  // prefer using server-provided user.id if present
+  const userIdBytes = normalizeServerUserId(options.user?.id) || await (async () => {
+    // fallback: create deterministic 16-byte id from user id
+    const enc = new TextEncoder();
+    const hash = await crypto.subtle.digest("SHA-256", enc.encode(user_id));
+    return new Uint8Array(hash).slice(0, 16);
+  })();
+
+  // Build publicKey using server-provided values where possible
+  const publicKey = {
+    challenge: challengeBytes,
+    rp: options.rp || { name: "FreshCut Manpower Hub", id: "freshcutmanpowerhub.onrender.com" },
+    user: {
+      id: userIdBytes,
+      name: options.user?.name || `user-${user_id}`,
+      displayName: options.user?.displayName || `Employee ${employeeId}`
+    },
+    pubKeyCredParams: options.pubKeyCredParams || [{ type: "public-key", alg: -7 }],
+    authenticatorSelection: options.authenticatorSelection || { authenticatorAttachment: "platform", userVerification: "required" },
+    timeout: options.timeout || 60000,
+    attestation: options.attestation || "none",
+  };
+
+  // 2) navigator.credentials.create()
   let credential;
   try {
-    credential = await navigator.credentials.create({
-      publicKey: {
-        challenge: challengeBytes,
-        rp: options.rp,
-        user: {
-          id: userIdBytes,
-          name: options.user.name,
-          displayName: options.user.displayName
-        },
-        pubKeyCredParams: options.pubKeyCredParams,
-        authenticatorSelection: options.authenticatorSelection,
-        timeout: options.timeout,
-        attestation: options.attestation
-      }
-    });
+    credential = await navigator.credentials.create({ publicKey });
   } catch (err) {
     console.error("navigator.credentials.create error:", err);
-    alert("Biometric registration failed.");
+    alert("Biometric registration failed (platform error).");
     return false;
   }
 
-  // 3) encode to base64url
-  const payload = {
-    user_id,
-    id: credential.id,
-    rawId: uint8ArrayToBase64Url(new Uint8Array(credential.rawId)),
-    type: credential.type,
-    challenge: options.challenge,
-    response: {
-      attestationObject: uint8ArrayToBase64Url(new Uint8Array(credential.response.attestationObject)),
-      clientDataJSON: uint8ArrayToBase64Url(new Uint8Array(credential.response.clientDataJSON))
-    }
-  };
+  // 3) encode response fields as base64url (NOT normal base64)
+  const rawIdB64Url = uint8ArrayToBase64Url(new Uint8Array(credential.rawId));
+  const attestationB64Url = uint8ArrayToBase64Url(new Uint8Array(credential.response.attestationObject));
+  const clientDataB64Url = uint8ArrayToBase64Url(new Uint8Array(credential.response.clientDataJSON));
 
   // 4) send to verify endpoint
   const verifyRes = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-register-verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      user_id,
+      id: credential.id,
+      rawId: rawIdB64Url,            // base64url
+      type: credential.type,
+      challenge: options.challenge,  // send the challenge string the server gave
+      response: {
+        attestationObject: attestationB64Url,
+        clientDataJSON: clientDataB64Url,
+      }
+    })
   });
 
   const verifyJson = await verifyRes.json().catch(() => ({}));
   if (!verifyRes.ok || !verifyJson.success) {
     console.error("Register verify failed", verifyJson);
-    alert("Biometric registration failed.");
+    alert("Biometric registration failed (verify).");
     return false;
   }
 
   alert("Biometric registered!");
   return true;
 }
-
 
 
 
@@ -300,7 +308,7 @@ async function verifyBiometric(employeeId) {
   const res = await fetch("https://hunsymrayonkonkyzvot.supabase.co/functions/v1/webauthn-auth-options", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-     body: JSON.stringify({ employee_id: employeeId })
+    body: JSON.stringify({ user_id })
   });
 
   if (!res.ok) {
@@ -338,7 +346,7 @@ async function verifyBiometric(employeeId) {
 
   // 3) prepare payload — encode fields to base64url
   const payload = {
-    employee_id: employeeId,
+    user_id,
     id: assertion.id,
     rawId: uint8ArrayToBase64Url(new Uint8Array(assertion.rawId)),
     type: assertion.type,
