@@ -174,19 +174,23 @@ async function registerBiometric(employeeId) {
   // data.challenge expected as base64url (or base64) — convert properly
   const challengeBytes = base64urlToUint8Array(data.challenge);
 
-  const publicKey = {
-    challenge: challengeBytes,
-    rp: { name: "FreshCut Manpower Hub", id: "freshcutmanpowerhub.onrender.com" },
-    user: {
-      id: await uuidToBytes(user_id), 
-      name: `user-${user_id}`,
-      displayName: `Employee ${employeeId}`, // optional
-    },
-    pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-    authenticatorSelection: { authenticatorAttachment: "platform" },
-    timeout: 60000,
-    attestation: "none",
-  };
+const publicKey = {
+  challenge: challengeBytes,
+  rp: { name: "FreshCut Manpower Hub", id: "freshcutmanpowerhub.onrender.com" },
+  user: {
+    id: await uuidToBytes(user_id), 
+    name: `user-${user_id}`,
+    displayName: `Employee ${employeeId}`,
+  },
+  pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+  authenticatorSelection: { 
+    authenticatorAttachment: "platform",
+    userVerification: "required",  // <--- MUST
+  },
+  timeout: 60000,
+  attestation: "none",
+};
+
 
   // 2) navigator create (opens fingerprint prompt)
   const credential = await navigator.credentials.create({ publicKey });
