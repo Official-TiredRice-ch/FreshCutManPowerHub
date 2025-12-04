@@ -136,12 +136,19 @@ function base64urlToUint8Array(base64url) {
   return Uint8Array.from([...raw].map((x) => x.charCodeAt(0)));
 }
 
+async function uuidToBytes(uuid) {
+  const enc = new TextEncoder();
+  const hash = await crypto.subtle.digest("SHA-256", enc.encode(uuid));
+  return new Uint8Array(hash).slice(0, 16);
+}
+
 async function getUserId() {
   const { data } = await supabase.auth.getUser();
   const user = data?.user ?? null;
   if (!user) throw new Error("User not signed in");
   return user.id;
 }
+
 
 
 /* -------- registerBiometric (frontend) -------- */
@@ -171,7 +178,7 @@ async function registerBiometric(employeeId) {
     challenge: challengeBytes,
     rp: { name: "FreshCut Manpower Hub", id: "freshcutmanpowerhub.onrender.com" },
     user: {
-      id: new TextEncoder().encode(user_id), // MUST be Uint8Array
+      id: await uuidToBytes(user_id), 
       name: `user-${user_id}`,
       displayName: `Employee ${employeeId}`, // optional
     },
@@ -277,7 +284,7 @@ async function verifyBiometric(employeeId) {
     publicKey: {
       challenge: challengeBytes,
       allowCredentials: (data.allowCredentials || []).map(c => ({
-        id: base64urlToUint8Array(c.id),
+        id: base64urlToUint8Array(c.id.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")),
         type: "public-key",
       })),
       userVerification: "required",
