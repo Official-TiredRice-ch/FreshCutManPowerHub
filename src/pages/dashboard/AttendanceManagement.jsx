@@ -195,10 +195,14 @@ async function registerBiometric(employeeId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       user_id,
-      credentialId: credentialIdB64,
-      attestationObject: attestationB64,
-      clientDataJSON: clientDataB64,
-      challenge: data.challenge
+      id: credential.id,
+      rawId: credentialIdB64,
+      type: credential.type,
+      challenge: data.challenge,
+      response: {
+        attestationObject: attestationB64,
+        clientDataJSON: clientDataB64,
+      }
     })
   });
 
@@ -283,12 +287,16 @@ async function verifyBiometric(employeeId) {
 
   // 3) prepare payload
   const payload = {
-    user_id,
-    credentialId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
-    authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData))),
-    clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON))),
-    signature: btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature))),
-    challenge: data.challenge,
+      user_id,
+      id: assertion.id,
+      rawId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
+      type: assertion.type,
+      challenge: data.challenge,
+      response: {
+        authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData))),
+        clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON))),
+        signature: btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature))),
+      }
   };
 
   // 4) verify at server
