@@ -195,10 +195,8 @@ async function registerBiometric(employeeId) {
   const options = await res.json();
 
   // convert challenge -> Uint8Array
-  const challengeBytes = base64urlToUint8Array(
-    // server may return challenge as base64url or base64; normalize
-    typeof options.challenge === "string" ? options.challenge.replace(/\s/g, "") : ""
-  );
+ const challengeBytes = base64urlToUint8Array(options.challenge);
+
 
   // prefer using server-provided user.id if present
   const userIdBytes = normalizeServerUserId(options.user?.id) || await (async () => {
